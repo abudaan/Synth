@@ -82,7 +82,6 @@ function onMIDIKeyDown(noteNumber, frequency, velocity){
 }
 
 
-
 // called when a key is released either on the virtual HTML piano or on a connected MIDI keyboard
 function onMIDIKeyUp(noteNumber){
   oscillators[noteNumber].disconnect();
@@ -90,6 +89,7 @@ function onMIDIKeyUp(noteNumber){
 }
 
 
+// get the MIDIAccess object either from WebMIDI or a Jazz plugin instance
 function setupMIDI(){
   if(navigator.requestMIDIAccess !== undefined){
     navigator.requestMIDIAccess().then(
@@ -110,6 +110,7 @@ function setupMIDI(){
 }
 
 
+// handle incoming messages from a connected MIDI keyboard
 function handleMIDIMessage(e){
   var type = e.data[0];
   var data1 = e.data[1];
@@ -122,6 +123,7 @@ function handleMIDIMessage(e){
 }
 
 
+// create dropdown menu with available MIDI in ports
 function setupMIDIInPorts(){
   var divInputs = document.getElementById('midi-inputs');
   var html = '<option id="-1">select MIDI in</option>';
@@ -146,6 +148,7 @@ function setupMIDIInPorts(){
 }
 
 
+// create the onscreen keyboard
 function setupKeyboard(start, end){
   var $keyContainer = $('#keys');
   var position = 0;
@@ -273,6 +276,7 @@ function setupEcho(){
 }
 
 
+// start the app
 document.addEventListener('DOMContentLoaded', function(){
 
   context = new AudioContext();
