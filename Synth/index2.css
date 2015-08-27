@@ -67,17 +67,28 @@ html *
       float: right;
     }
 
-      #lower{
+    #lower{
       height: 150px;
       border: 1px solid green;
+      position: relative;
     }
     .white {
       float: left;
-      width: 25.90px;
+      width: 25.73px;
       height: 146px;
       border: 1px solid black;
+      position: absolute;
+      z-index: 1;
       background-color: #e5e5e5;
-      }
+    }
+    .black {
+      width: 20.95px;
+      height: 90px;
+      background-color: #191919;
+      border-radius: 10px;
+      position: absolute;
+      z-index: 2;
+    }
 
 /*      #wave {
         width: 15%;
@@ -98,17 +109,9 @@ html *
   #home {
 margin-left: 200px;
   }
-      
 
-      .black {
-        float: left;
-        width: 20.95px;
-        height: 90px;
-        background-color: #191919;
-        border-radius: 10px;
-        position: relative;
-        top: -150px;
-      }
+
+
 
 
       #Db1 {margin-left: 17px;}

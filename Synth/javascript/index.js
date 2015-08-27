@@ -1,45 +1,17 @@
-var pianoKeys =  [{name: "C1", color: "white"}, {name: "Db1", color: "black"},
-                  {name: "D1", color: "white"}, {name: "Eb1", color: "black"},
-                  {name: "E1", color: "white"},
-                  {name: "F1", color: "white"}, {name: "Gb1", color: "black"},
-                  {name: "G1", color: "white"}, {name: "Ab1", color: "black"},
-                  {name: "A1", color: "white"}, {name: "Bb1", color: "black"},
-                  {name: "B1", color: "white"},
+'use strict';
 
-                  {name: "C2", color: "white"}, {name: "Db2", color: "black"},
-                  {name: "D2", color: "white"}, {name: "Eb2", color: "black"},
-                  {name: "E2", color: "white"},
-                  {name: "F2", color: "white"}, {name: "Gb2", color: "black"},
-                  {name: "G2", color: "white"}, {name: "Ab2", color: "black"},
-                  {name: "A2", color: "white"}, {name: "Bb2", color: "black"},
-                  {name: "B2", color: "white"},
-
-                  {name: "C3", color: "white"}, {name: "Db3", color: "black"},
-                  {name: "D3", color: "white"}, {name: "Eb3", color: "black"},
-                  {name: "E3", color: "white"},
-                  {name: "F3", color: "white"}, {name: "Gb3", color: "black"},
-                  {name: "G3", color: "white"}, {name: "Ab3", color: "black"},
-                  {name: "A3", color: "white"}, {name: "Bb3", color: "black"},
-                  {name: "B3", color: "white"},
-
-                  {name: "C4", color: "white"}, {name: "Db4", color: "black"},
-                  {name: "D4", color: "white"}, {name: "Eb4", color: "black"},
-                  {name: "E4", color: "white"},
-                  {name: "F4", color: "white"}, {name: "Gb4", color: "black"},
-                  {name: "G4", color: "white"}, {name: "Ab4", color: "black"},
-                  {name: "A4", color: "white"}, {name: "Bb4", color: "black"},
-                  {name: "B4", color: "white"},
-
-                  {name: "C5", color: "white"}, {name: "Db5", color: "black"},
-                  {name: "D5", color: "white"}, {name: "Eb5", color: "black"},
-                  {name: "E5", color: "white"},
-                  {name: "F5", color: "white"}, {name: "Gb5", color: "black"},
-                  {name: "G5", color: "white"}, {name: "Ab5", color: "black"},
-                  {name: "A5", color: "white"}, {name: "Bb5", color: "black"},
-                  {name: "B5", color: "white"},
-                  {name: "C6", color: "white"}
-                  ];
-
+var $ = window.$;
+var context; // AudioContext
+var MIDIAccess; // WebMIDI or Jazz plugin instance
+var convolver;
+var volume;
+var distortion;
+var delay;
+var mix;
+var depth;
+var feedback;
+var oscillators = {};
+var currentType = 'sine'; //set a default value for the wave form
 var noteNames = {
   'sharp' : ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
   'flat' : ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'],
@@ -48,17 +20,8 @@ var noteNames = {
 };
 
 
-var convolver;
-var volume;
-var distortion;
-var delay;
-var mix;
-var depth;
-var feedback;
-
-
 // get note name from MIDI note number
-getNoteName = function(number, mode) {
+function getNoteName(number, mode) {
   mode = mode || 'sharp';
   //console.log(mode);
   //var octave = Math.floor((number / 12) - 2), // → in Cubase central C = C3 instead of C4
@@ -67,57 +30,83 @@ getNoteName = function(number, mode) {
   return [noteName,octave];
 }
 
-getFrequency = function(number){
+
+// get frequency from MIDI note number
+function getFrequency(number){
   var pitch = 440;
   return pitch * Math.pow(2,(number - 69)/12); // midi standard, see: http://en.wikipedia.org/wiki/MIDI_Tuning_Standard
-};
+}
+
+
+// check if MIDI note number is a black key
+function isBlackKey(noteNumber){
+  var black;
+
+  switch(true){
+    case noteNumber % 12 === 1://C#
+    case noteNumber % 12 === 3://D#
+    case noteNumber % 12 === 6://F#
+    case noteNumber % 12 === 8://G#
+    case noteNumber % 12 === 10://A#
+      black = true;
+      break;
+    default:
+      black = false;
+  }
+  return black;
+}
 
 
 // called when a key is pressed either on the virtual HTML piano or on a connected MIDI keyboard
-function onMIDIKeyDown(id, frequency, velocity){
-  console.log(id, frequency, velocity);
+function onMIDIKeyDown(noteNumber, frequency, velocity){
+  frequency = getFrequency(noteNumber);
+  console.log(noteNumber, frequency, velocity);
 
-  oscillators[id] = context.createOscillator();
-  oscillators[id].type = currentType;
-  oscillators[id].frequency.value = frequency;
+  oscillators[noteNumber] = context.createOscillator();
+  oscillators[noteNumber].type = currentType;
+  oscillators[noteNumber].frequency.value = frequency;
 
-  oscillators[id].connect(volume);
-  oscillators[id].connect(delay);
-  oscillators[id].connect(distortion);
+  oscillators[noteNumber].connect(volume);
+  oscillators[noteNumber].connect(delay);
+  oscillators[noteNumber].connect(distortion);
+
   delay.connect(mix);
   mix.connect(volume);
   volume.connect(context.destination);
 
-  oscillators[id].connect(convolver);
-  $("#flipSwitch").on("change",function(){
+  oscillators[noteNumber].connect(convolver);
+
+  $('#flipSwitch').on('change',function(){
     var sw = $(this).val();
-    if(sw == "on"){
-      oscillators[id].connect(distortion);
-    }else{oscillators[id].disconnect(distortion)}
-    });
+    if(sw == 'on'){
+      oscillators[noteNumber].connect(distortion);
+    }else{
+      oscillators[noteNumber].disconnect(distortion);
+    }
+  });
 
 
-  distortion.connect(convolver)
+  distortion.connect(convolver);
   convolver.connect(volume);
   volume.connect(context.destination);
 
-
   //lfo.connect(depth);
-
-
   //lfo.start(0)
   //});
 
-  oscillators[id].start();
+  oscillators[noteNumber].start();
 }
 
-function onMIDIKeyUp(id){
-  oscillators[id].disconnect();
+
+
+// called when a key is released either on the virtual HTML piano or on a connected MIDI keyboard
+function onMIDIKeyUp(noteNumber){
+  oscillators[noteNumber].disconnect();
   //lfo.disconnect();
 }
 
-document.addEventListener("DOMContentLoaded", function(event) {
 
+function setupMIDI(){
   if(navigator.requestMIDIAccess !== undefined){
     navigator.requestMIDIAccess().then(
 
@@ -135,6 +124,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
     console.log('No access to MIDI devices');
   }
 
+
+
   // see this example: http://abudaan.github.io/heartbeat/examples/#!midi_in_&_out/webmidi_create_midi_events
   function showMIDIPorts(){
     console.log('MIDI supported');
@@ -150,69 +141,116 @@ document.addEventListener("DOMContentLoaded", function(event) {
       var type = e.data[0];
       var data1 = e.data[1];
       var data2 = e.data[2];
-      var noteName = getNoteName(data1);
-      noteName = noteName[0] + noteName[1];
       if(type === 144 && data2 !== 0){
-        onMIDIKeyDown(noteName, getFrequency(data1), data2);
+        onMIDIKeyDown(data1, data2);
       }else if(type === 128 || (type === 144 && data2 === 0)){
         onMIDIKeyUp(noteName);
       }
     }, false);
   }
+}
 
-  context = new AudioContext();
-  $whiteContainer = $('#white');
-  $blackContainer = $('#black');
-  oscillators = {};
-  currentType = "sine"; //set a defualt value for the wave form
-  convolver = context.createConvolver(); //this is the echo creation
-  volume = context.createGain(); //this is the volume
-  distortion = context.createWaveShaper();
+
+function setupKeyboard(start, end){
+  var $keyContainer = $('#keys');
+  var position = 0;
+  var whiteKeyWidth = 27.73;
+
+  for(var i = start; i < end; i++){
+    var color = isBlackKey(i) ? 'black' : 'white';
+    var $div = $('<div class="' + color + '" id="' + i + '"></div>');
+
+    if(color === 'black'){
+      $div.css('left', (position - 10) + 'px');
+    }else{
+      $div.css('left', position + 'px');
+      position += whiteKeyWidth;
+    }
+
+    $div.appendTo($keyContainer);
+
+    $div.on('mousedown', function() {
+      onMIDIKeyDown(this.id);
+    });
+
+    $div.on('mouseup', function() {
+      onMIDIKeyUp(this.id);
+    });
+  }
+}
+
+
+function setupGain(){
+  volume = context.createGain();
+
+  var slider = document.getElementById('gainSlider');
+    slider.addEventListener('change', function() {
+    volume.gain.value = this.value;
+  });
+}
+
+
+function setupDelay(){
   delay = context.createDelay();
   mix = context.createGain();  // for effect (Flanger) sound
   depth = context.createGain();  // for LFO
   feedback = context.createGain();
 
+  var slider = document.getElementById('DelaySlider');
+  slider.addEventListener('change', setup);
+  setup.call(slider);
 
+  function setup(){
+    depth.connect(delay.delayTime);
+    delay.connect(feedback);
+    feedback.connect(delay);
+    var depthRate = 0.2;  // 80 %
 
-  var soundSource, concertHallBuffer;  //this is the echo
-  var echo1 = document.getElementById('echo1');
-  var echo2 = document.getElementById('echo2');
-  var echo3 = document.getElementById('echo3');
-  var echo4 = document.getElementById('echo4');
-
- var gainSlider = document.getElementById("gainSlider");
-  gainSlider.addEventListener('change', function() {
-  volume.gain.value = this.value;
-  });
-
-  var distSlider = document.getElementById("distSlider");
-  var DelaySlider = document.getElementById("DelaySlider");
-
-  function makeDistortionCurve(amount) {
-  var k = typeof amount === 'number' ? amount : 50,
-    n_samples = 44100,
-    curve = new Float32Array(n_samples),
-    deg = Math.PI / 180,
-    i = 0,
-    x;
-    for ( ; i < n_samples; ++i ) {
-    x = i * 9 / n_samples - 1;
-    curve[i] = ( 7 + k ) * x * 23 * deg / ( Math.PI + k * Math.abs(x) );
+    if(this.value){
+      delay.delayTime.value = this.value;
+    } else {
+      delay.delayTime.value = 0.0;
     }
-  return curve;
-  };
+
+    //var lfo = context.createOscillator();
+    depth.gain.value = delay.delayTime.value * depthRate;  // 5 msec +- 4 (5 * 0.8) msec
+    //lfo.frequency.value = 50;  // 5 Hz
+    mix.gain.value = 0.3;
+    feedback.gain.value = 0.3;
+  }
+}
 
 
-distortion.curve = makeDistortionCurve(distSlider);
-distortion.oversample = '4x';
+function setupDistortion(){
+  distortion = context.createWaveShaper();
 
+  function makeDistortionCurve(amount){
+    var k = typeof amount === 'number' ? amount : 50;
+    var n_samples = 44100;
+    var curve = new Float32Array(n_samples);
+    var deg = Math.PI / 180;
+    var x;
+    for(var i = 0; i < n_samples; ++i){
+      x = i * 9 / n_samples - 1;
+      curve[i] = ( 7 + k ) * x * 23 * deg / ( Math.PI + k * Math.abs(x) );
+    }
+    return curve;
+  }
+
+  distortion.curve = makeDistortionCurve();
+  distortion.oversample = '4x';
+}
+
+
+function setupEcho(){
+  convolver = context.createConvolver();
+  var soundSource, concertHallBuffer;  //this is the IR file
 
   function setupEcho(echo){
     return function() {
       var request = new XMLHttpRequest();
-      request.open("GET", "./audio_files/echo" + echo + ".wav", true);
-      request.responseType = "arraybuffer";
+      request.open('GET', './audio_files/echo' + echo + '.wav', true);
+      request.responseType = 'arraybuffer';
 
       request.onload = function() {
         var audioData = request.response;
@@ -222,91 +260,40 @@ distortion.oversample = '4x';
           soundSource = context.createBufferSource();
           soundSource.buffer = concertHallBuffer;
           convolver.buffer = concertHallBuffer;
-        }, function(e){"Error with decoding audio data" + e.err});
+        }, function(e){'Error with decoding audio data' + e.err});
       }
 
       request.send();
     }
-
   }
 
-  echo1.onclick = setupEcho(1);
-  echo2.onclick = setupEcho(2);
-  echo3.onclick = setupEcho(3);
-  echo4.onclick = setupEcho(4);
+  for(var i = 1; i < 5; i++){
+    var echo = document.getElementById('echo' + i);
+    echo.onclick = setupEcho(1);
+  }
+}
 
 
-    var pianoKeysFreq = _.map(pianoKeys, function(pianoKeys, i){
-      keyNum = i + 16;
-      exp = (keyNum - 49) / 12
-      var frequency = Math.pow(2, exp) * 440;
-      return _.extend(pianoKeys, {frequency:frequency})
-    })
+document.addEventListener('DOMContentLoaded', function(event) {
 
-    whites = _.where(pianoKeys, {color: "white"});
-    blacks = _.where(pianoKeys, {color: "black"});
+  context = new AudioContext();
 
-    function setupDelay(){
-          depth.connect(delay.delayTime);
-          delay.connect(feedback);
-          feedback.connect(delay);
-          var depthRate = 0.2;  // 80 %
+  setupKeyboard(36, 97);
+  setupGain();
+  setupDelay();
+  setupDistortion();
+  setupEcho();
 
-          if (this.value){
-            delay.delayTime.value = this.value;
-          } else {
-            delay.delayTime.value = 0.0;
-          }
-
-          //var lfo = context.createOscillator();
-          depth.gain.value = delay.delayTime.value * depthRate;  // 5 msec +- 4 (5 * 0.8) msec
-          //lfo.frequency.value = 50;  // 5 Hz
-          mix.gain.value = 0.3;
-          feedback.gain.value = 0.3;
-    }
-
-    function populateKeys(keys){
-
-      _.each(keys, function(key) {
-        var name = key.name;
-        var id = key.name;
-        var color = key.color;
-        var frequency = key.frequency;
-
-        var div = "<div class='" + color + "' id='" + id + "'></div>";
-
-        if(color == "white"){
-          $(div).appendTo($whiteContainer)
-        } else {
-          $(div).appendTo($blackContainer)
-        };
-
-        $("#" + id).on('mousedown', function() {
-          onMIDIKeyDown(id, frequency);
-        });
-
-        $("#" + id).on('mouseup', function() {
-          onMIDIKeyUp(id);
-        });
-      })
-
-    }
-    populateKeys(whites);
-    populateKeys(blacks);
-    setupDelay();
-    DelaySlider.addEventListener('change', setupDelay)
-
-    document.getElementById("triangle").addEventListener("click", function(){
-     currentType = 'triangle';});
-    document.getElementById("square").addEventListener("click", function(){
-     currentType = 'square';});
-    document.getElementById("sine").addEventListener("click", function(){
-     currentType = 'sine';});
-    document.getElementById("sawtooth").addEventListener("click", function(){
-     currentType = 'sawtooth';});
-
-
-
-
-
+  document.getElementById('triangle').addEventListener('click', function(){
+    currentType = 'triangle';
+  });
+  document.getElementById('square').addEventListener('click', function(){
+    currentType = 'square';
+  });
+  document.getElementById('sine').addEventListener('click', function(){
+    currentType = 'sine';
+  });
+  document.getElementById('sawtooth').addEventListener('click', function(){
+    currentType = 'sawtooth';
+  });
 });
