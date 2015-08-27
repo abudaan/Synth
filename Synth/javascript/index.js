@@ -1,34 +1,21 @@
 'use strict';
 
 var $ = window.$;
+var console = window.console;
+
 var context; // AudioContext
 var MIDIAccess; // WebMIDI or Jazz plugin instance
+var MIDIInPort; // currently connected MIDI in port
 var convolver;
 var volume;
 var distortion;
+var useDistortion;
 var delay;
 var mix;
 var depth;
 var feedback;
 var oscillators = {};
 var currentType = 'sine'; //set a default value for the wave form
-var noteNames = {
-  'sharp' : ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
-  'flat' : ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'],
-  'enharmonic-sharp' : ['B#', 'C#', 'C##', 'D#', 'D##', 'E#', 'F#', 'F##', 'G#', 'G##', 'A#', 'A##'],
-  'enharmonic-flat' : ['Dbb', 'Db', 'Ebb', 'Eb', 'Fb', 'Gbb', 'Gb', 'Abb', 'Ab', 'Bbb', 'Bb', 'Cb']
-};
-
-
-// get note name from MIDI note number
-function getNoteName(number, mode) {
-  mode = mode || 'sharp';
-  //console.log(mode);
-  //var octave = Math.floor((number / 12) - 2), // → in Cubase central C = C3 instead of C4
-  var octave = Math.floor((number / 12) - 1),
-      noteName = noteNames[mode][number % 12];
-  return [noteName,octave];
-}
 
 
 // get frequency from MIDI note number
@@ -60,7 +47,7 @@ function isBlackKey(noteNumber){
 // called when a key is pressed either on the virtual HTML piano or on a connected MIDI keyboard
 function onMIDIKeyDown(noteNumber, frequency, velocity){
   frequency = getFrequency(noteNumber);
-  console.log(noteNumber, frequency, velocity);
+  //console.log(noteNumber, frequency, velocity);
 
   oscillators[noteNumber] = context.createOscillator();
   oscillators[noteNumber].type = currentType;
@@ -76,15 +63,12 @@ function onMIDIKeyDown(noteNumber, frequency, velocity){
 
   oscillators[noteNumber].connect(convolver);
 
-  $('#flipSwitch').on('change',function(){
-    var sw = $(this).val();
-    if(sw == 'on'){
-      oscillators[noteNumber].connect(distortion);
-    }else{
-      oscillators[noteNumber].disconnect(distortion);
-    }
-  });
-
+  // distortion doesn't work yet
+  if(useDistortion){
+    oscillators[noteNumber].connect(distortion);
+  }else{
+    oscillators[noteNumber].disconnect(distortion);
+  }
 
   distortion.connect(convolver);
   convolver.connect(volume);
@@ -109,13 +93,13 @@ function onMIDIKeyUp(noteNumber){
 function setupMIDI(){
   if(navigator.requestMIDIAccess !== undefined){
     navigator.requestMIDIAccess().then(
-
       function onFulfilled(access, options){
         MIDIAccess = access;
-        showMIDIPorts();
+        setupMIDIInPorts();
       },
-
       function onRejected(e){
+        var divInputs = document.getElementById('midi-inputs');
+        divInputs.style.display = 'none';
         console.log('No access to MIDI devices:' + e);
       }
     );
@@ -123,31 +107,42 @@ function setupMIDI(){
     // browsers without WebMIDI API or Jazz plugin
     console.log('No access to MIDI devices');
   }
+}
 
 
-
-  // see this example: http://abudaan.github.io/heartbeat/examples/#!midi_in_&_out/webmidi_create_midi_events
-  function showMIDIPorts(){
-    console.log('MIDI supported');
-    var inputs = [];
-    MIDIAccess.inputs.forEach(function(port, key){
-      inputs.push(port);
-    });
-    // connect the first found MIDI keyboard
-    var input = inputs[1];
-    // explicitly open MIDI port
-    input.open();
-    input.addEventListener('midimessage', function(e){
-      var type = e.data[0];
-      var data1 = e.data[1];
-      var data2 = e.data[2];
-      if(type === 144 && data2 !== 0){
-        onMIDIKeyDown(data1, data2);
-      }else if(type === 128 || (type === 144 && data2 === 0)){
-        onMIDIKeyUp(noteName);
-      }
-    }, false);
+function handleMIDIMessage(e){
+  var type = e.data[0];
+  var data1 = e.data[1];
+  var data2 = e.data[2];
+  if(type === 144 && data2 !== 0){
+    onMIDIKeyDown(data1, data2);
+  }else if(type === 128 || (type === 144 && data2 === 0)){
+    onMIDIKeyUp(data1);
   }
+}
+
+
+function setupMIDIInPorts(){
+  var divInputs = document.getElementById('midi-inputs');
+  var html = '<option id="-1">select MIDI in</option>';
+  MIDIAccess.inputs.forEach(function(port){
+    html += '<option id="' + port.id + '">' + port.name + '</option>';
+  });
+
+  divInputs.innerHTML = html;
+
+  divInputs.addEventListener('change', function(){
+    var id = divInputs.options[divInputs.selectedIndex].id;
+    if(MIDIInPort){
+      MIDIInPort.close();
+      MIDIInPort.onmidimessage = null;
+      MIDIInPort = null;
+    }
+    if(id !== '-1'){
+      MIDIInPort = MIDIAccess.inputs.get(id);
+      MIDIInPort.onmidimessage = handleMIDIMessage;
+    }
+  });
 }
 
 
@@ -197,10 +192,7 @@ function setupDelay(){
   feedback = context.createGain();
 
   var slider = document.getElementById('DelaySlider');
-  slider.addEventListener('change', setup);
-  setup.call(slider);
-
-  function setup(){
+  var setup = function(){
     depth.connect(delay.delayTime);
     delay.connect(feedback);
     feedback.connect(delay);
@@ -217,7 +209,9 @@ function setupDelay(){
     //lfo.frequency.value = 50;  // 5 Hz
     mix.gain.value = 0.3;
     feedback.gain.value = 0.3;
-  }
+  };
+  slider.addEventListener('change', setup);
+  setup.call(slider);
 }
 
 
@@ -239,6 +233,10 @@ function setupDistortion(){
 
   distortion.curve = makeDistortionCurve();
   distortion.oversample = '4x';
+
+  $('#flipSwitch').on('change',function(){
+    useDistortion = $(this).val() === 'on';
+  });
 }
 
 
@@ -246,7 +244,7 @@ function setupEcho(){
   convolver = context.createConvolver();
   var soundSource, concertHallBuffer;  //this is the IR file
 
-  function setupEcho(echo){
+  function setup(echo){
     return function() {
       var request = new XMLHttpRequest();
       request.open('GET', './audio_files/echo' + echo + '.wav', true);
@@ -256,33 +254,35 @@ function setupEcho(){
         var audioData = request.response;
         context.decodeAudioData(audioData, function(buffer) {
           concertHallBuffer = buffer;
-
           soundSource = context.createBufferSource();
           soundSource.buffer = concertHallBuffer;
           convolver.buffer = concertHallBuffer;
-        }, function(e){'Error with decoding audio data' + e.err});
-      }
+        }, function(e){
+          'Error with decoding audio data' + e.err;
+        });
+      };
 
       request.send();
-    }
+    };
   }
 
   for(var i = 1; i < 5; i++){
     var echo = document.getElementById('echo' + i);
-    echo.onclick = setupEcho(1);
+    echo.onclick = setup(1);
   }
 }
 
 
-document.addEventListener('DOMContentLoaded', function(event) {
+document.addEventListener('DOMContentLoaded', function(){
 
   context = new AudioContext();
 
-  setupKeyboard(36, 97);
   setupGain();
   setupDelay();
   setupDistortion();
   setupEcho();
+  setupKeyboard(36, 97);
+  setupMIDI();
 
   document.getElementById('triangle').addEventListener('click', function(){
     currentType = 'triangle';

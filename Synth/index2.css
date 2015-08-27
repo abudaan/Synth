@@ -3,6 +3,10 @@ html *
    font-family: Bete Noir NF;
 }
 
+#midi-inputs{
+  margin-bottom: 10px;
+}
+
 #container {
   margin: 0px auto;
   width: 100%;
