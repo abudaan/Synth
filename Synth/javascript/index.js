@@ -45,8 +45,9 @@ function isBlackKey(noteNumber){
 
 
 // called when a key is pressed either on the virtual HTML piano or on a connected MIDI keyboard
-function onMIDIKeyDown(noteNumber, frequency, velocity){
-  frequency = getFrequency(noteNumber);
+function onMIDIKeyDown(noteNumber, velocity){
+  var frequency = getFrequency(noteNumber);
+  // TODO: may be you should do something with the velocity here?
   //console.log(noteNumber, frequency, velocity);
 
   oscillators[noteNumber] = context.createOscillator();
